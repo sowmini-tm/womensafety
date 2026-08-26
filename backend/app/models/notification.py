@@ -21,6 +21,11 @@ class NotificationType(str, Enum):
     ALERT = "ALERT"
 
 
+class NotificationChannel(str, Enum):
+    SMS = "SMS"
+    EMAIL = "EMAIL"
+
+
 class NotificationStatus(str, Enum):
     PENDING = "PENDING"
     SENT = "SENT"
@@ -43,10 +48,18 @@ class Notification(Base):
         nullable=True,
         index=True,
     )
+    emergency_contact_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("emergency_contacts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     type: Mapped[NotificationType] = mapped_column(SQLEnum(NotificationType), nullable=False, index=True)
+    channel: Mapped[NotificationChannel] = mapped_column(SQLEnum(NotificationChannel), nullable=True, index=True)
     recipient: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[NotificationStatus] = mapped_column(SQLEnum(NotificationStatus), nullable=False, default=NotificationStatus.PENDING, index=True)
+    failure_reason: Mapped[str] = mapped_column(Text, nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
 

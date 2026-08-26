@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -5,7 +7,12 @@ from ..database import get_db
 from ..models.emergency_contact import EmergencyContact
 from ..models.geofence import Geofence
 from ..models.location import Location
-from ..models.notification import Notification, NotificationStatus, NotificationType
+from ..models.notification import (
+    Notification,
+    NotificationChannel,
+    NotificationStatus,
+    NotificationType,
+)
 from ..models.route_request import RouteRequest
 from ..models.route_result import RouteResult, RouteType
 from ..models.sos_incident import SOSIncident, SOSStatus
@@ -35,6 +42,7 @@ from ..schemas.safety import (
     ThreatAssessmentCreate,
     ThreatAssessmentRead,
 )
+from ..services.notification_service import NotificationService, redact_message
 from ..utils.auth import get_current_user
 
 router = APIRouter()
@@ -89,6 +97,70 @@ def list_locations(user: User = Depends(get_current_user), db: Session = Depends
     return db.query(Location).filter(Location.user_id == user.id).order_by(Location.timestamp.desc()).all()
 
 
+def _attempt_delivery(channel: NotificationChannel, recipient: str, message: str) -> dict:
+    """Dispatch through the configured provider for the given channel."""
+    if channel == NotificationChannel.SMS:
+        return NotificationService.send_sms(recipient, message)
+    return NotificationService.send_email(recipient, "SOS Alert", message)
+
+
+def _deliver_notification(
+    db: Session,
+    user_id: str,
+    sos_incident_id: str,
+    contact: EmergencyContact,
+    channel: NotificationChannel,
+    recipient: str,
+    message: str,
+) -> dict:
+    """Persist a PENDING notification, attempt real delivery, then record the outcome.
+
+    Status transitions are truthful: PENDING until the provider responds, then
+    SENT or FAILED. Exceptions are contained here so one failed contact or
+    channel never prevents attempts to the remaining contacts.
+    """
+    notification = Notification(
+        user_id=user_id,
+        sos_incident_id=sos_incident_id,
+        emergency_contact_id=contact.id,
+        type=NotificationType.ALERT,
+        channel=channel,
+        recipient=recipient,
+        message=message,
+        status=NotificationStatus.PENDING,
+    )
+    db.add(notification)
+    db.commit()
+    db.refresh(notification)
+
+    try:
+        result = _attempt_delivery(channel, recipient, message)
+        if result.get("status") == "sent":
+            notification.status = NotificationStatus.SENT
+            notification.sent_at = datetime.utcnow()
+        else:
+            notification.status = NotificationStatus.FAILED
+            notification.failure_reason = redact_message(
+                str(result.get("error") or "Delivery failed")
+            )
+    except Exception as exc:  # noqa: BLE001 - containment is intentional
+        notification.status = NotificationStatus.FAILED
+        notification.failure_reason = redact_message(f"{type(exc).__name__}: {exc}")
+    db.commit()
+    db.refresh(notification)
+
+    return {
+        "id": notification.id,
+        "emergency_contact_id": contact.id,
+        "contact_name": contact.name,
+        "channel": channel.value,
+        "recipient": recipient,
+        "status": notification.status.value,
+        "failure_reason": notification.failure_reason,
+        "sent_at": notification.sent_at.isoformat() if notification.sent_at else None,
+    }
+
+
 @router.post("/safety/sos", response_model=SOSRead, status_code=status.HTTP_201_CREATED)
 def trigger_sos(
     payload: SOSCreate,
@@ -105,16 +177,61 @@ def trigger_sos(
     db.commit()
     db.refresh(incident)
 
-    notification = Notification(
-        user_id=user.id,
-        sos_incident_id=incident.id,
-        type=NotificationType.ALERT,
-        recipient=user.email,
-        message=payload.description or "SOS alert triggered. Trusted contacts are being notified.",
-        status=NotificationStatus.SENT,
+    contacts = (
+        db.query(EmergencyContact)
+        .filter(
+            EmergencyContact.user_id == user.id,
+            EmergencyContact.is_active.is_(True),
+        )
+        .all()
     )
-    db.add(notification)
-    db.commit()
+
+    if not contacts:
+        # Be honest: without contacts there is nobody to alert.
+        return {
+            "id": incident.id,
+            "user_id": incident.user_id,
+            "latitude": incident.latitude,
+            "longitude": incident.longitude,
+            "status": incident.status.value,
+            "description": payload.description,
+            "no_contacts_configured": True,
+            "notifications": [],
+        }
+
+    alert_message = (
+        f"SOS alert! {user.email} needs help at "
+        f"({payload.latitude}, {payload.longitude})."
+    )
+    if payload.description:
+        alert_message += f" Details: {payload.description}"
+
+    delivery_results: list[dict] = []
+    for contact in contacts:
+        if contact.phone:
+            delivery_results.append(
+                _deliver_notification(
+                    db=db,
+                    user_id=user.id,
+                    sos_incident_id=incident.id,
+                    contact=contact,
+                    channel=NotificationChannel.SMS,
+                    recipient=contact.phone,
+                    message=alert_message,
+                )
+            )
+        if contact.email:
+            delivery_results.append(
+                _deliver_notification(
+                    db=db,
+                    user_id=user.id,
+                    sos_incident_id=incident.id,
+                    contact=contact,
+                    channel=NotificationChannel.EMAIL,
+                    recipient=contact.email,
+                    message=alert_message,
+                )
+            )
 
     return {
         "id": incident.id,
@@ -123,6 +240,8 @@ def trigger_sos(
         "longitude": incident.longitude,
         "status": incident.status.value,
         "description": payload.description,
+        "no_contacts_configured": False,
+        "notifications": delivery_results,
     }
 
 
@@ -339,10 +458,14 @@ def list_notifications(user: User = Depends(get_current_user), db: Session = Dep
         {
             "id": notification.id,
             "user_id": notification.user_id,
+            "sos_incident_id": notification.sos_incident_id,
+            "emergency_contact_id": notification.emergency_contact_id,
             "type": notification.type.value,
+            "channel": notification.channel.value if notification.channel else None,
             "recipient": notification.recipient,
             "message": notification.message,
             "status": notification.status.value,
+            "failure_reason": notification.failure_reason,
             "sent_at": notification.sent_at.isoformat() if notification.sent_at else None,
             "created_at": notification.created_at.isoformat() if notification.created_at else None,
         }

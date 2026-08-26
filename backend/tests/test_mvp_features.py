@@ -117,9 +117,18 @@ def test_emergency_and_risk_features():
 
 def test_recent_activity_feed():
     token = create_user()
+    auth_header = {"Authorization": f"Bearer {token}"}
+    # A contact is required so the SOS produces notification rows.
+    contact = client.post(
+        "/api/safety/emergency-contacts",
+        headers=auth_header,
+        json={"name": "Mom", "phone": "+15550000000", "is_primary": True},
+    )
+    assert contact.status_code == 201, contact.text
+
     client.post(
         "/api/safety/sos",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=auth_header,
         json={"latitude": 12.9716, "longitude": 77.5946, "description": "Need help"},
     )
     client.post(

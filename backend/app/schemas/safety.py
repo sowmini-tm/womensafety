@@ -73,6 +73,19 @@ class SOSCreate(BaseModel):
     description: Optional[str] = None
 
 
+class NotificationDeliveryResult(BaseModel):
+    """Outcome of a single delivery attempt to one contact via one channel."""
+
+    id: str
+    emergency_contact_id: str
+    contact_name: str
+    channel: str
+    recipient: str
+    status: str
+    failure_reason: Optional[str] = None
+    sent_at: Optional[str] = None
+
+
 class SOSRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,6 +95,8 @@ class SOSRead(BaseModel):
     longitude: float
     status: str
     description: Optional[str] = None
+    no_contacts_configured: bool = False
+    notifications: list[NotificationDeliveryResult] = []
 
 
 class FakeCallCreate(BaseModel):
@@ -187,10 +202,14 @@ class NotificationRead(BaseModel):
 
     id: str
     user_id: str
+    sos_incident_id: Optional[str] = None
+    emergency_contact_id: Optional[str] = None
     type: str
+    channel: Optional[str] = None
     recipient: str
     message: str
     status: str
+    failure_reason: Optional[str] = None
     sent_at: Optional[str] = None
     created_at: Optional[str] = None
 
