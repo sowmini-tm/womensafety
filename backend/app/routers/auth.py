@@ -7,7 +7,13 @@ from ..database import get_db
 from ..models.user import User
 from ..schemas.auth import LoginRequest, RefreshTokenRequest, Token, UserCreate, UserRead
 from ..utils.auth import get_current_user
-from ..utils.security import create_access_token, create_refresh_token, hash_password, verify_password
+from ..utils.security import (
+    REFRESH_TOKEN_TYPE,
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter()
 
@@ -49,14 +55,15 @@ def refresh(payload: RefreshTokenRequest):
         raise HTTPException(status_code=400, detail="Missing refresh_token")
     try:
         data = jwt.decode(refresh_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        sub = data.get("sub")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    if not sub:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-    access = create_access_token(sub)
-    refresh = create_refresh_token(sub)
-    return {"access_token": access, "refresh_token": refresh}
+    # Only dedicated refresh tokens may be exchanged; access tokens are rejected here.
+    if data.get("token_type") != REFRESH_TOKEN_TYPE or not data.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    subject = data["sub"]
+    access = create_access_token(subject)
+    new_refresh = create_refresh_token(subject)
+    return {"access_token": access, "refresh_token": new_refresh}
 
 
 @router.get("/auth/me", response_model=UserRead)
