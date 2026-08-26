@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createEmergencyContact, createLocation, fetchEmergencyContacts, fetchLocations, scheduleFakeCall, triggerSOS } from '../api/safety'
-import { createGeofence, createRoutePlan, fetchGeofences, fetchNotifications, fetchSafetyActivity } from '../api/safetyExtra'
+import { createEmergencyContact, createLocation, deleteEmergencyContact, fetchEmergencyContacts, fetchLocations, scheduleFakeCall, triggerSOS, updateEmergencyContact } from '../api/safety'
+import { createGeofence, createRoutePlan, deleteGeofence, fetchGeofences, fetchNotifications, fetchSafetyActivity, updateGeofence } from '../api/safetyExtra'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -14,6 +14,20 @@ export default function Dashboard() {
   const [routeResult, setRouteResult] = useState<any>(null)
   const [activity, setActivity] = useState<any[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
+  const [contactForm, setContactForm] = useState({ name: '', phone: '', email: '', relationship_type: 'Friend', is_primary: false })
+  const [editingContactId, setEditingContactId] = useState<string | null>(null)
+  const [geofenceForm, setGeofenceForm] = useState({ name: '', latitude: '', longitude: '', radius: '' })
+  const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null)
+
+  const resetContactForm = () => {
+    setContactForm({ name: '', phone: '', email: '', relationship_type: 'Friend', is_primary: false })
+    setEditingContactId(null)
+  }
+
+  const resetGeofenceForm = () => {
+    setGeofenceForm({ name: '', latitude: '', longitude: '', radius: '' })
+    setEditingGeofenceId(null)
+  }
 
   useEffect(() => {
     void loadData()
@@ -110,35 +124,101 @@ export default function Dashboard() {
     }
   }
 
-  const handleAddContact = async () => {
+  const handleContactSubmit = async () => {
+    if (!contactForm.name.trim() || !contactForm.phone.trim()) {
+      setStatus('Contact name and phone are required')
+      return
+    }
     try {
-      await createEmergencyContact({
-        name: 'Emergency Contact',
-        phone: '+15550000000',
-        relationship_type: 'Friend',
-        is_primary: true,
-      })
-      setStatus('Emergency contact added')
+      const payload = {
+        name: contactForm.name.trim(),
+        phone: contactForm.phone.trim(),
+        email: contactForm.email.trim() || undefined,
+        relationship_type: contactForm.relationship_type.trim() || undefined,
+        is_primary: contactForm.is_primary,
+      }
+      if (editingContactId) {
+        await updateEmergencyContact(editingContactId, payload)
+        setStatus('Emergency contact updated')
+      } else {
+        await createEmergencyContact(payload)
+        setStatus('Emergency contact added')
+      }
+      resetContactForm()
       await loadData()
     } catch {
-      setStatus('Emergency contact creation failed')
+      setStatus(editingContactId ? 'Emergency contact update failed' : 'Emergency contact creation failed')
     }
   }
 
-  const handleAddGeofence = async () => {
+  const handleContactEdit = (contact: any) => {
+    setEditingContactId(contact.id)
+    setContactForm({
+      name: contact.name ?? '',
+      phone: contact.phone ?? '',
+      email: contact.email ?? '',
+      relationship_type: contact.relationship_type ?? '',
+      is_primary: Boolean(contact.is_primary),
+    })
+  }
+
+  const handleContactDelete = async (id: string) => {
     try {
-      const payload = {
-        name: 'Home Safe Zone',
-        latitude: 12.9716,
-        longitude: 77.5946,
-        radius: 250,
-        is_active: true,
-      }
-      const result = await createGeofence(payload)
-      setStatus(`Geofence created: ${result.name}`)
+      await deleteEmergencyContact(id)
+      setStatus('Emergency contact deleted')
+      if (editingContactId === id) resetContactForm()
       await loadData()
     } catch {
-      setStatus('Geofence creation failed')
+      setStatus('Emergency contact deletion failed')
+    }
+  }
+
+  const handleGeofenceSubmit = async () => {
+    if (!geofenceForm.name.trim() || !geofenceForm.latitude.trim() || !geofenceForm.longitude.trim() || !geofenceForm.radius.trim()) {
+      setStatus('Zone name, latitude, longitude and radius are required')
+      return
+    }
+    const latitude = Number(geofenceForm.latitude)
+    const longitude = Number(geofenceForm.longitude)
+    const radius = Number(geofenceForm.radius)
+    if (Number.isNaN(latitude) || Number.isNaN(longitude) || Number.isNaN(radius)) {
+      setStatus('Latitude, longitude and radius must be numbers')
+      return
+    }
+    try {
+      const payload = { name: geofenceForm.name.trim(), latitude, longitude, radius, is_active: true }
+      if (editingGeofenceId) {
+        await updateGeofence(editingGeofenceId, payload)
+        setStatus('Safe zone updated')
+      } else {
+        await createGeofence(payload)
+        setStatus(`Geofence created: ${payload.name}`)
+      }
+      resetGeofenceForm()
+      await loadData()
+    } catch {
+      setStatus(editingGeofenceId ? 'Safe zone update failed' : 'Safe zone creation failed')
+    }
+  }
+
+  const handleGeofenceEdit = (zone: any) => {
+    setEditingGeofenceId(zone.id)
+    setGeofenceForm({
+      name: zone.name ?? '',
+      latitude: zone.latitude != null ? String(zone.latitude) : '',
+      longitude: zone.longitude != null ? String(zone.longitude) : '',
+      radius: zone.radius != null ? String(zone.radius) : '',
+    })
+  }
+
+  const handleGeofenceDelete = async (id: string) => {
+    try {
+      await deleteGeofence(id)
+      setStatus('Safe zone deleted')
+      if (editingGeofenceId === id) resetGeofenceForm()
+      await loadData()
+    } catch {
+      setStatus('Safe zone deletion failed')
     }
   }
 
@@ -245,8 +325,6 @@ export default function Dashboard() {
               <button onClick={handleLocation} className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-left font-medium text-white hover:bg-indigo-500">Save my location</button>
               <button onClick={handleSOS} className="w-full rounded-2xl bg-red-600 px-4 py-3 text-left font-medium text-white hover:bg-red-500">Trigger SOS</button>
               <button onClick={handleFakeCall} className="w-full rounded-2xl bg-amber-600 px-4 py-3 text-left font-medium text-white hover:bg-amber-500">Schedule fake call</button>
-              <button onClick={handleAddContact} className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-left font-medium text-white hover:bg-emerald-500">Add emergency contact</button>
-              <button onClick={handleAddGeofence} className="w-full rounded-2xl bg-violet-600 px-4 py-3 text-left font-medium text-white hover:bg-violet-500">Create safe zone</button>
               <button onClick={handleRoutePlan} className="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-left font-medium text-white hover:bg-cyan-500">Plan safe route</button>
             </div>
           </div>
@@ -260,10 +338,42 @@ export default function Dashboard() {
         <div className="grid gap-6 md:grid-cols-3 mb-6">
           <div className="rounded-2xl bg-slate-800 p-4">
             <h3 className="text-xl font-semibold mb-3">Emergency Contacts</h3>
+            <form
+              className="mb-4 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleContactSubmit()
+              }}
+            >
+              <input value={contactForm.name} onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })} placeholder="Name" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <input value={contactForm.phone} onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })} placeholder="Phone (+15551234567)" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <input value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} placeholder="Email (optional)" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <div className="flex items-center gap-2">
+                <input value={contactForm.relationship_type} onChange={(e) => setContactForm({ ...contactForm, relationship_type: e.target.value })} placeholder="Relationship" className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+                <label className="flex shrink-0 items-center gap-1 text-xs text-slate-300">
+                  <input type="checkbox" checked={contactForm.is_primary} onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })} />
+                  Primary
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">{editingContactId ? 'Save changes' : 'Add contact'}</button>
+                {editingContactId && (
+                  <button type="button" onClick={resetContactForm} className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:border-slate-400">Cancel</button>
+                )}
+              </div>
+            </form>
             {contacts.length === 0 ? <p>No contacts yet.</p> : contacts.map((contact) => (
-              <div key={contact.id} className="border-b border-slate-700 py-2">
-                <p className="font-medium">{contact.name}</p>
-                <p className="text-sm text-slate-300">{contact.phone}</p>
+              <div key={contact.id} className="border-b border-slate-700 py-2 last:border-b-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium">{contact.is_primary ? '★ ' : ''}{contact.name}</p>
+                    <p className="truncate text-sm text-slate-300">{contact.phone}{contact.relationship_type ? ` · ${contact.relationship_type}` : ''}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button onClick={() => handleContactEdit(contact)} className="rounded-md border border-slate-600 px-2 py-1 text-xs hover:border-slate-400">Edit</button>
+                    <button onClick={() => void handleContactDelete(contact.id)} className="rounded-md bg-rose-700 px-2 py-1 text-xs hover:bg-rose-600">Delete</button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -292,10 +402,38 @@ export default function Dashboard() {
         <div className="grid gap-6 md:grid-cols-2 mb-6">
           <div className="rounded-2xl bg-slate-800 p-4">
             <h3 className="text-xl font-semibold mb-3">Safe Zones</h3>
+            <form
+              className="mb-4 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleGeofenceSubmit()
+              }}
+            >
+              <input value={geofenceForm.name} onChange={(e) => setGeofenceForm({ ...geofenceForm, name: e.target.value })} placeholder="Zone name" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={geofenceForm.latitude} onChange={(e) => setGeofenceForm({ ...geofenceForm, latitude: e.target.value })} placeholder="Latitude" inputMode="decimal" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+                <input value={geofenceForm.longitude} onChange={(e) => setGeofenceForm({ ...geofenceForm, longitude: e.target.value })} placeholder="Longitude" inputMode="decimal" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              </div>
+              <input value={geofenceForm.radius} onChange={(e) => setGeofenceForm({ ...geofenceForm, radius: e.target.value })} placeholder="Radius in meters" inputMode="decimal" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <div className="flex gap-2">
+                <button type="submit" className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500">{editingGeofenceId ? 'Save changes' : 'Create zone'}</button>
+                {editingGeofenceId && (
+                  <button type="button" onClick={resetGeofenceForm} className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:border-slate-400">Cancel</button>
+                )}
+              </div>
+            </form>
             {geofences.length === 0 ? <p>No safe zones yet.</p> : geofences.map((zone) => (
-              <div key={zone.id} className="border-b border-slate-700 py-2">
-                <p className="font-medium">{zone.name}</p>
-                <p className="text-sm text-slate-300">{zone.latitude}, {zone.longitude} · radius {zone.radius}m</p>
+              <div key={zone.id} className="border-b border-slate-700 py-2 last:border-b-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium">{zone.name}</p>
+                    <p className="truncate text-sm text-slate-300">{zone.latitude}, {zone.longitude} · radius {zone.radius}m</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button onClick={() => handleGeofenceEdit(zone)} className="rounded-md border border-slate-600 px-2 py-1 text-xs hover:border-slate-400">Edit</button>
+                    <button onClick={() => void handleGeofenceDelete(zone.id)} className="rounded-md bg-rose-700 px-2 py-1 text-xs hover:bg-rose-600">Delete</button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>

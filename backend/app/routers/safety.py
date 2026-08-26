@@ -25,10 +25,12 @@ from ..schemas.safety import (
     ChatbotResponse,
     EmergencyContactCreate,
     EmergencyContactRead,
+    EmergencyContactUpdate,
     FakeCallCreate,
     FakeCallRead,
     GeofenceCreate,
     GeofenceRead,
+    GeofenceUpdate,
     HelplineRead,
     LocationCreate,
     LocationRead,
@@ -71,6 +73,49 @@ def create_emergency_contact(
     db.commit()
     db.refresh(contact)
     return contact
+
+
+@router.put("/safety/emergency-contacts/{contact_id}", response_model=EmergencyContactRead)
+def update_emergency_contact(
+    contact_id: str,
+    payload: EmergencyContactUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update one of the authenticated user's own emergency contacts."""
+    contact = (
+        db.query(EmergencyContact)
+        .filter(EmergencyContact.id == contact_id, EmergencyContact.user_id == user.id)
+        .first()
+    )
+    if contact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Emergency contact not found")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(contact, field, value)
+    db.commit()
+    db.refresh(contact)
+    return contact
+
+
+@router.delete("/safety/emergency-contacts/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_emergency_contact(
+    contact_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete one of the authenticated user's own emergency contacts."""
+    contact = (
+        db.query(EmergencyContact)
+        .filter(EmergencyContact.id == contact_id, EmergencyContact.user_id == user.id)
+        .first()
+    )
+    if contact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Emergency contact not found")
+
+    db.delete(contact)
+    db.commit()
+    return None
 
 
 @router.post("/safety/location", response_model=LocationRead, status_code=status.HTTP_201_CREATED)
@@ -345,6 +390,45 @@ def create_geofence(
 @router.get("/safety/geofences", response_model=list[GeofenceRead])
 def list_geofences(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Geofence).filter(Geofence.user_id == user.id).order_by(Geofence.created_at.desc()).all()
+
+
+@router.put("/safety/geofences/{geofence_id}", response_model=GeofenceRead)
+def update_geofence(
+    geofence_id: str,
+    payload: GeofenceUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update one of the authenticated user's own geofences."""
+    geofence = (
+        db.query(Geofence).filter(Geofence.id == geofence_id, Geofence.user_id == user.id).first()
+    )
+    if geofence is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Geofence not found")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(geofence, field, value)
+    db.commit()
+    db.refresh(geofence)
+    return geofence
+
+
+@router.delete("/safety/geofences/{geofence_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_geofence(
+    geofence_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete one of the authenticated user's own geofences."""
+    geofence = (
+        db.query(Geofence).filter(Geofence.id == geofence_id, Geofence.user_id == user.id).first()
+    )
+    if geofence is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Geofence not found")
+
+    db.delete(geofence)
+    db.commit()
+    return None
 
 
 @router.post("/safety/route-plan", response_model=RoutePlanResponse, status_code=status.HTTP_201_CREATED)

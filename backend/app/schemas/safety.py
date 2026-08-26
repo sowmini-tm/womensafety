@@ -53,6 +53,14 @@ class EmergencyContactRead(EmergencyContactCreate):
     user_id: str
 
 
+class EmergencyContactUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    relationship_type: Optional[str] = None
+    is_primary: Optional[bool] = None
+
+
 class LocationCreate(BaseModel):
     latitude: float
     longitude: float
@@ -127,6 +135,14 @@ class GeofenceRead(GeofenceCreate):
 
     id: str
     user_id: str
+
+
+class GeofenceUpdate(BaseModel):
+    name: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius: Optional[float] = None
+    is_active: Optional[bool] = None
 
 
 class RoutePlanCreate(BaseModel):

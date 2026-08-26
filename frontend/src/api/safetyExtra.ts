@@ -11,6 +11,24 @@ export const createGeofence = async (payload: {
   return response.data
 }
 
+export const updateGeofence = async (
+  id: string,
+  payload: {
+    name?: string
+    latitude?: number
+    longitude?: number
+    radius?: number
+    is_active?: boolean
+  },
+) => {
+  const response = await api.put(`/safety/geofences/${id}`, payload)
+  return response.data
+}
+
+export const deleteGeofence = async (id: string) => {
+  await api.delete(`/safety/geofences/${id}`)
+}
+
 export const fetchGeofences = async () => {
   const response = await api.get('/safety/geofences')
   return response.data

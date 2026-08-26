@@ -16,6 +16,24 @@ export const createEmergencyContact = async (payload: {
   return response.data
 }
 
+export const updateEmergencyContact = async (
+  id: string,
+  payload: {
+    name?: string
+    phone?: string
+    email?: string
+    relationship_type?: string
+    is_primary?: boolean
+  },
+) => {
+  const response = await api.put(`/safety/emergency-contacts/${id}`, payload)
+  return response.data
+}
+
+export const deleteEmergencyContact = async (id: string) => {
+  await api.delete(`/safety/emergency-contacts/${id}`)
+}
+
 export const createLocation = async (payload: {
   latitude: number
   longitude: number
