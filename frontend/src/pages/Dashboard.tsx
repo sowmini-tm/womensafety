@@ -67,17 +67,34 @@ export default function Dashboard() {
   }
 
   const handleSOS = async () => {
-    try {
-      const payload = {
-        latitude: 12.9716,
-        longitude: 77.5946,
-        description: 'SOS triggered from dashboard',
-      }
-      const response = await triggerSOS(payload)
-      setStatus(`SOS triggered: ${response.id}`)
-    } catch {
-      setStatus('SOS trigger failed')
+    if (!navigator.geolocation) {
+      setStatus('Geolocation is not supported in this browser - SOS not sent')
+      return
     }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const payload = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            description: 'SOS triggered from dashboard',
+          }
+          const response = await triggerSOS(payload)
+          setStatus(`SOS triggered at your current location: ${response.id}`)
+        } catch {
+          setStatus('SOS trigger failed')
+        }
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setStatus('Location permission denied - SOS was NOT sent. Enable location access and try again.')
+        } else {
+          setStatus('Could not determine your current location - SOS was NOT sent.')
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    )
   }
 
   const handleFakeCall = async () => {
