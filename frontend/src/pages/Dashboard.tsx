@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createEmergencyContact, createLocation, deleteEmergencyContact, fetchEmergencyContacts, fetchLocations, scheduleFakeCall, triggerSOS, updateEmergencyContact } from '../api/safety'
 import { createGeofence, createRoutePlan, deleteGeofence, fetchGeofences, fetchNotifications, fetchSafetyActivity, updateGeofence } from '../api/safetyExtra'
+import RouteMap from '../components/RouteMap'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -18,6 +19,8 @@ export default function Dashboard() {
   const [editingContactId, setEditingContactId] = useState<string | null>(null)
   const [geofenceForm, setGeofenceForm] = useState({ name: '', latitude: '', longitude: '', radius: '' })
   const [editingGeofenceId, setEditingGeofenceId] = useState<string | null>(null)
+  const [destinationForm, setDestinationForm] = useState({ latitude: '', longitude: '' })
+  const [planningRoute, setPlanningRoute] = useState(false)
 
   const resetContactForm = () => {
     setContactForm({ name: '', phone: '', email: '', relationship_type: 'Friend', is_primary: false })
@@ -223,20 +226,44 @@ export default function Dashboard() {
   }
 
   const handleRoutePlan = async () => {
-    try {
-      const payload = {
-        start_latitude: 12.97,
-        start_longitude: 77.59,
-        destination_latitude: 12.975,
-        destination_longitude: 77.6,
-        route_type: 'safe',
-      }
-      const result = await createRoutePlan(payload)
-      setRouteResult(result)
-      setStatus('Safe route plan generated')
-    } catch {
-      setStatus('Route plan failed')
+    const destLat = Number(destinationForm.latitude)
+    const destLng = Number(destinationForm.longitude)
+    if (destinationForm.latitude.trim() === '' || destinationForm.longitude.trim() === '' || !Number.isFinite(destLat) || !Number.isFinite(destLng)) {
+      setStatus('Enter destination latitude and longitude first')
+      return
     }
+    if (!navigator.geolocation) {
+      setStatus('Geolocation is not supported in this browser')
+      return
+    }
+
+    setPlanningRoute(true)
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const result = await createRoutePlan({
+            start_latitude: coords.latitude,
+            start_longitude: coords.longitude,
+            destination_latitude: destLat,
+            destination_longitude: destLng,
+            route_type: 'safe',
+          })
+          setRouteResult(result)
+          setStatus(`Real route planned · ${Math.round(result.results?.[0]?.distance ?? 0)} m`)
+        } catch (error: any) {
+          setRouteResult(null)
+          const detail = error?.response?.data?.detail
+          setStatus(typeof detail === 'string' ? detail : 'Route plan failed')
+        } finally {
+          setPlanningRoute(false)
+        }
+      },
+      () => {
+        setPlanningRoute(false)
+        setStatus('Could not read your current location — allow location access to plan a route')
+      },
+      { enableHighAccuracy: true, timeout: 15000 },
+    )
   }
 
   const handleAssistant = async () => {
@@ -325,7 +352,6 @@ export default function Dashboard() {
               <button onClick={handleLocation} className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-left font-medium text-white hover:bg-indigo-500">Save my location</button>
               <button onClick={handleSOS} className="w-full rounded-2xl bg-red-600 px-4 py-3 text-left font-medium text-white hover:bg-red-500">Trigger SOS</button>
               <button onClick={handleFakeCall} className="w-full rounded-2xl bg-amber-600 px-4 py-3 text-left font-medium text-white hover:bg-amber-500">Schedule fake call</button>
-              <button onClick={handleRoutePlan} className="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-left font-medium text-white hover:bg-cyan-500">Plan safe route</button>
             </div>
           </div>
         </section>
@@ -440,11 +466,30 @@ export default function Dashboard() {
 
           <div className="rounded-2xl bg-slate-800 p-4">
             <h3 className="text-xl font-semibold mb-3">Recommended Route</h3>
-            {routeResult ? (
+            <form
+              className="mb-3 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleRoutePlan()
+              }}
+            >
+              <input value={destinationForm.latitude} onChange={(e) => setDestinationForm({ ...destinationForm, latitude: e.target.value })} placeholder="Destination latitude" inputMode="decimal" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <input value={destinationForm.longitude} onChange={(e) => setDestinationForm({ ...destinationForm, longitude: e.target.value })} placeholder="Destination longitude" inputMode="decimal" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm" />
+              <button type="submit" disabled={planningRoute} className="w-full rounded-lg bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-60">{planningRoute ? 'Finding real route…' : 'Plan safe route'}</button>
+            </form>
+            {routeResult?.results?.[0] ? (
               <div>
-                <p className="text-sm text-slate-300">Distance: {routeResult.results?.[0]?.distance ?? 'n/a'} m</p>
-                <p className="text-sm text-slate-300">Duration: {routeResult.results?.[0]?.estimated_duration ?? 'n/a'} min</p>
-                <p className="text-sm text-slate-300">Risk score: {routeResult.results?.[0]?.risk_score ?? 'n/a'}</p>
+                <RouteMap
+                  className="h-56 w-full rounded-xl"
+                  startPosition={[routeResult.route_request.start_latitude, routeResult.route_request.start_longitude]}
+                  destinationPosition={[routeResult.route_request.destination_latitude, routeResult.route_request.destination_longitude]}
+                  routeCoordinates={(routeResult.results[0].route_data?.coordinates ?? []).map((p: any) => [p.latitude, p.longitude] as [number, number])}
+                />
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm text-slate-300">Distance: {Math.round(routeResult.results[0].distance)} m</p>
+                  <p className="text-sm text-slate-300">Duration: {Math.max(1, Math.round((routeResult.results[0].estimated_duration ?? 0) / 60))} min</p>
+                  <p className="text-sm text-slate-300">Risk score: {routeResult.results[0].risk_score}</p>
+                </div>
               </div>
             ) : <p>No route planned yet.</p>}
           </div>

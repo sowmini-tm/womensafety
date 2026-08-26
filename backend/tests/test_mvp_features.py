@@ -3,6 +3,7 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.routers import safety as safety_router
 
 client = TestClient(app)
 
@@ -53,7 +54,7 @@ def test_profile_and_medical_details():
     assert medical.status_code == 201, medical.text
 
 
-def test_emergency_and_risk_features():
+def test_emergency_and_risk_features(monkeypatch):
     token = create_user()
     contact = client.post(
         "/api/safety/emergency-contacts",
@@ -97,6 +98,21 @@ def test_emergency_and_risk_features():
         json={"name": "Home", "latitude": 12.9716, "longitude": 77.5946, "radius": 250, "is_active": True},
     )
     assert geofence.status_code == 201, geofence.text
+
+    # Keep this combined feature test offline: mock the OSRM routing call.
+    monkeypatch.setattr(
+        safety_router,
+        "fetch_route_from_osrm",
+        lambda *args, **kwargs: {
+            "coordinates": [
+                {"latitude": 12.97, "longitude": 77.59},
+                {"latitude": 12.973, "longitude": 77.596},
+                {"latitude": 12.975, "longitude": 77.6},
+            ],
+            "distance": 1250.0,
+            "duration": 310.0,
+        },
+    )
 
     route = client.post(
         "/api/safety/route-plan",

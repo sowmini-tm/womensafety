@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createLocation, fetchEmergencyContacts } from '../api/safety'
+import RouteMap from '../components/RouteMap'
 
 // Upload roughly every 7 seconds while still receiving watchPosition updates.
 const UPLOAD_INTERVAL_MS = 7000
@@ -165,9 +166,11 @@ export default function LiveTracking() {
             </div>
 
             <div className="relative h-[420px] overflow-hidden rounded-3xl border border-slate-700 bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950">
-              <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-              <div className={`absolute inset-x-10 bottom-10 rounded-full border border-dashed transition-all duration-500 ${sharing ? 'h-48 border-emerald-400/60' : 'h-32 border-slate-500/40'}`} />
-              <div className="absolute bottom-4 left-4 rounded-2xl bg-slate-950/80 px-4 py-3">
+              <RouteMap
+                className="h-[420px] w-full"
+                userPosition={position ? [position.latitude, position.longitude] : null}
+              />
+              <div className="pointer-events-none absolute bottom-4 left-4 rounded-2xl bg-slate-950/80 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Current position</p>
                 <p className="mt-2 text-lg font-medium text-slate-100">
                   {position

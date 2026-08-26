@@ -1,3 +1,6 @@
+import os
+
+import httpx
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -445,12 +448,69 @@ def delete_geofence(
     return None
 
 
+OSRM_BASE_URL = os.getenv("OSRM_BASE_URL", "https://router.project-osrm.org")
+
+
+def fetch_route_from_osrm(
+    start_latitude: float,
+    start_longitude: float,
+    destination_latitude: float,
+    destination_longitude: float,
+    timeout_seconds: float = 10.0,
+):
+    """Fetch a real driving route from an OSRM server.
+
+    Returns {"coordinates": [{latitude, longitude}...], "distance": meters,
+    "duration": seconds} or None when the routing service fails. Never
+    fabricates route data — callers must treat None as "no route available".
+    """
+    base_url = OSRM_BASE_URL.rstrip("/")
+    url = (
+        f"{base_url}/route/v1/driving/"
+        f"{start_longitude},{start_latitude};{destination_longitude},{destination_latitude}"
+    )
+    try:
+        response = httpx.get(url, params={"overview": "full", "geometries": "geojson"}, timeout=timeout_seconds)
+        response.raise_for_status()
+        data = response.json()
+        routes = data.get("routes") or []
+        route = routes[0] if routes else None
+        if data.get("code") != "Ok" or route is None:
+            return None
+        raw_coordinates = (route.get("geometry") or {}).get("coordinates") or []
+        coordinates = [
+            {"latitude": float(point[1]), "longitude": float(point[0])}
+            for point in raw_coordinates
+            if isinstance(point, (list, tuple)) and len(point) >= 2
+        ]
+        return {
+            "coordinates": coordinates,
+            "distance": float(route["distance"]),
+            "duration": float(route["duration"]),
+        }
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return None
+
+
 @router.post("/safety/route-plan", response_model=RoutePlanResponse, status_code=status.HTTP_201_CREATED)
 def create_route_plan(
     payload: RoutePlanCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    calculated = fetch_route_from_osrm(
+        payload.start_latitude,
+        payload.start_longitude,
+        payload.destination_latitude,
+        payload.destination_longitude,
+    )
+    if calculated is None:
+        # Never persist or return invented straight-line data when routing fails.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Routing service unavailable; could not calculate a real route right now",
+        )
+
     route_request = RouteRequest(
         user_id=user.id,
         start_latitude=payload.start_latitude,
@@ -462,25 +522,18 @@ def create_route_plan(
     db.commit()
     db.refresh(route_request)
 
-    lat_delta = abs(payload.destination_latitude - payload.start_latitude)
-    lon_delta = abs(payload.destination_longitude - payload.start_longitude)
-    distance = round((lat_delta * 111.32 + lon_delta * 111.32) * 1000, 2)
-    duration = round(max(distance / 1400, 3), 2)
     risk_score = 25 if payload.route_type.lower() in {"unsafe", "risk", "night"} else 15
     route_type = RouteType.RECOMMENDED if payload.route_type.lower() in {"safe", "recommended", "default"} else RouteType.ALTERNATIVE
     route_data = {
-        "waypoints": [
-            {"latitude": payload.start_latitude, "longitude": payload.start_longitude},
-            {"latitude": payload.destination_latitude, "longitude": payload.destination_longitude},
-        ],
-        "notes": "This route prioritizes safer, better-lit segments and lower-risk junctions.",
+        "source": "osrm",
+        "coordinates": calculated["coordinates"],
     }
 
     result = RouteResult(
         route_request_id=route_request.id,
         route_type=route_type,
-        distance=distance,
-        estimated_duration=duration,
+        distance=calculated["distance"],
+        estimated_duration=calculated["duration"],
         risk_score=risk_score,
         route_data=route_data,
     )
