@@ -488,7 +488,14 @@ export default function Dashboard() {
                 <div className="mt-3 space-y-1">
                   <p className="text-sm text-slate-300">Distance: {Math.round(routeResult.results[0].distance)} m</p>
                   <p className="text-sm text-slate-300">Duration: {Math.max(1, Math.round((routeResult.results[0].estimated_duration ?? 0) / 60))} min</p>
-                  <p className="text-sm text-slate-300">Risk score: {routeResult.results[0].risk_score}</p>
+                  <p className="text-sm text-slate-300">Risk: {routeResult.results[0].risk_score} · {routeResult.results[0].route_data?.risk?.level ?? 'UNKNOWN'}</p>
+                  {(routeResult.results[0].route_data?.risk?.factors ?? []).length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 text-xs text-slate-400">
+                      {(routeResult.results[0].route_data?.risk?.factors as string[]).map((factor) => (
+                        <li key={factor}>{factor}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             ) : <p>No route planned yet.</p>}

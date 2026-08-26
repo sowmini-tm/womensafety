@@ -492,6 +492,120 @@ def fetch_route_from_osrm(
         return None
 
 
+RISK_LEVEL_HIGH_THRESHOLD = 65
+RISK_LEVEL_MEDIUM_THRESHOLD = 35
+
+
+def calculate_route_safety(
+    distance_meters: float,
+    duration_seconds: float,
+    route_type: str,
+    destination_in_safe_zone: bool,
+) -> dict:
+    """Deterministic, explainable route risk score (0-100, higher = riskier).
+
+    Uses ONLY data available in this request/response: route length, travel
+    time, the requested route_type keyword, and whether the destination falls
+    inside one of the user's own active safe zones. This is a heuristic label,
+    NOT real-world crime data. Same inputs always yield the same output.
+    """
+    try:
+        distance_meters = max(float(distance_meters), 0.0)
+    except (TypeError, ValueError):
+        distance_meters = 0.0
+    try:
+        duration_seconds = max(float(duration_seconds), 0.0)
+    except (TypeError, ValueError):
+        duration_seconds = 0.0
+
+    factors: list[str] = []
+    score = 20
+
+    label = str(route_type or "").strip().lower()
+    if label in {"unsafe", "risk", "night"}:
+        score += 25
+        factors.append(f"Requested as '{label}' — higher-risk context supplied by the request")
+    else:
+        factors.append("Standard route request")
+
+    if distance_meters > 10_000:
+        score += 15
+        factors.append("Long route (over 10 km)")
+    elif distance_meters > 5_000:
+        score += 10
+        factors.append("Medium-long route (over 5 km)")
+    elif distance_meters > 2_000:
+        score += 5
+        factors.append("Moderate route length (over 2 km)")
+    else:
+        factors.append("Short route (2 km or less)")
+
+    if duration_seconds > 1_800:
+        score += 10
+        factors.append("Long travel time (over 30 minutes)")
+    elif duration_seconds > 900:
+        score += 5
+        factors.append("Travel time over 15 minutes")
+
+    if duration_seconds > 0:
+        avg_speed_kmh = distance_meters / duration_seconds * 3.6
+        if avg_speed_kmh < 10:
+            factors.append(f"Low average speed (~{avg_speed_kmh:.0f} km/h) — walking or slow traffic conditions")
+        elif avg_speed_kmh > 90:
+            factors.append(f"High average speed (~{avg_speed_kmh:.0f} km/h) — highway-type travel")
+
+    if destination_in_safe_zone:
+        score -= 15
+        factors.append("Destination lies inside one of your active safe zones")
+    else:
+        factors.append("Destination lies outside your active safe zones")
+
+    score = max(0, min(100, int(round(score))))
+    if score >= RISK_LEVEL_HIGH_THRESHOLD:
+        level = "HIGH"
+    elif score >= RISK_LEVEL_MEDIUM_THRESHOLD:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+
+    return {"score": score, "level": level, "factors": factors}
+
+
+def _destination_in_active_safe_zone(
+    db: Session,
+    user_id: str,
+    destination_latitude: float,
+    destination_longitude: float,
+) -> bool:
+    """True when the destination is within radius of one of the user's active geofences."""
+    active_zones = (
+        db.query(Geofence)
+        .filter(Geofence.user_id == user_id, Geofence.is_active.is_(True))
+        .all()
+    )
+    for zone in active_zones:
+        distance = _haversine_meters(
+            destination_latitude,
+            destination_longitude,
+            float(zone.latitude),
+            float(zone.longitude),
+        )
+        if distance <= max(float(zone.radius), 0.0):
+            return True
+    return False
+
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points in meters."""
+    import math
+
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 6_371_000.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 @router.post("/safety/route-plan", response_model=RoutePlanResponse, status_code=status.HTTP_201_CREATED)
 def create_route_plan(
     payload: RoutePlanCreate,
@@ -511,6 +625,19 @@ def create_route_plan(
             detail="Routing service unavailable; could not calculate a real route right now",
         )
 
+    destination_in_safe_zone = _destination_in_active_safe_zone(
+        db,
+        user.id,
+        payload.destination_latitude,
+        payload.destination_longitude,
+    )
+    safety_info = calculate_route_safety(
+        calculated["distance"],
+        calculated["duration"],
+        payload.route_type,
+        destination_in_safe_zone,
+    )
+
     route_request = RouteRequest(
         user_id=user.id,
         start_latitude=payload.start_latitude,
@@ -522,11 +649,11 @@ def create_route_plan(
     db.commit()
     db.refresh(route_request)
 
-    risk_score = 25 if payload.route_type.lower() in {"unsafe", "risk", "night"} else 15
     route_type = RouteType.RECOMMENDED if payload.route_type.lower() in {"safe", "recommended", "default"} else RouteType.ALTERNATIVE
     route_data = {
         "source": "osrm",
         "coordinates": calculated["coordinates"],
+        "risk": safety_info,
     }
 
     result = RouteResult(
@@ -534,7 +661,7 @@ def create_route_plan(
         route_type=route_type,
         distance=calculated["distance"],
         estimated_duration=calculated["duration"],
-        risk_score=risk_score,
+        risk_score=safety_info["score"],
         route_data=route_data,
     )
     db.add(result)
