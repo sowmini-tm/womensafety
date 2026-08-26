@@ -142,6 +142,20 @@ def list_locations(user: User = Depends(get_current_user), db: Session = Depends
     return db.query(Location).filter(Location.user_id == user.id).order_by(Location.timestamp.desc()).all()
 
 
+@router.get("/safety/location/latest", response_model=LocationRead)
+def get_latest_location(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Latest saved location of the requesting user only (never another user's)."""
+    location = (
+        db.query(Location)
+        .filter(Location.user_id == user.id)
+        .order_by(Location.timestamp.desc())
+        .first()
+    )
+    if not location:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No locations recorded yet")
+    return location
+
+
 def _attempt_delivery(channel: NotificationChannel, recipient: str, message: str) -> dict:
     """Dispatch through the configured provider for the given channel."""
     if channel == NotificationChannel.SMS:
