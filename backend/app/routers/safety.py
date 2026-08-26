@@ -48,6 +48,7 @@ from ..schemas.safety import (
     ThreatAssessmentRead,
 )
 from ..services.notification_service import NotificationService, redact_message
+from ..services.geofence_service import evaluate_geofence_events, record_geofence_activity
 from ..utils.auth import get_current_user
 
 router = APIRouter()
@@ -137,7 +138,23 @@ def create_location(
     db.add(location)
     db.commit()
     db.refresh(location)
-    return location
+
+    # Phase 9: evaluate the requesting user's active geofences against this real
+    # GPS point. Only genuine OUTSIDE<->INSIDE transitions produce events; the
+    # persisted per-(user, geofence) state keeps repeats from re-firing.
+    geofence_events = evaluate_geofence_events(db, user.id, payload.latitude, payload.longitude)
+    for event in geofence_events:
+        record_geofence_activity(db, user.id, user.email, event)
+
+    return {
+        "id": location.id,
+        "user_id": location.user_id,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+        "accuracy": location.accuracy,
+        "speed": location.speed,
+        "geofence_events": geofence_events,
+    }
 
 
 @router.get("/safety/location", response_model=list[LocationRead])

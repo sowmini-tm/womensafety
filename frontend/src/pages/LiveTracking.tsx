@@ -35,6 +35,7 @@ export default function LiveTracking() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const [geoError, setGeoError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [geoEvents, setGeoEvents] = useState<Array<{ geofence_id: string; geofence_name: string; event_type: string; distance_meters: number }>>([])
 
   const watchIdRef = useRef<number | null>(null)
   const lastUploadRef = useRef(0)
@@ -91,9 +92,12 @@ export default function LiveTracking() {
       accuracy: tracked.accuracy ?? undefined,
       speed: tracked.speed ?? undefined,
     })
-      .then(() => {
+      .then((saved) => {
         setLastSavedAt(Date.now())
         setUploadError(null)
+        // Surface real geofence entry/exit transitions reported by the backend.
+        const events = Array.isArray(saved?.geofence_events) ? saved.geofence_events : []
+        if (events.length > 0) setGeoEvents(events)
       })
       .catch(() => {
         setUploadError('Could not save the last position to the server. Will retry on the next update.')
@@ -153,6 +157,21 @@ export default function LiveTracking() {
         {geoError && (
           <div className="mb-4 rounded-2xl border border-rose-700/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200" role="alert">
             {geoError}
+          </div>
+        )}
+
+        {geoEvents.length > 0 && (
+          <div className="mb-4 rounded-2xl border border-cyan-700/60 bg-cyan-950/40 px-4 py-3 text-sm text-cyan-100" role="status">
+            <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Geofence activity</p>
+            <ul className="mt-2 space-y-1">
+              {geoEvents.map((event) => (
+                <li key={`${event.geofence_id}-${event.event_type}`}>
+                  {event.event_type === 'ENTERED' ? 'Entered' : 'Left'}{' '}
+                  <span className="font-medium text-slate-100">{event.geofence_name}</span>{' '}
+                  ({Math.round(event.distance_meters)} m from center)
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

@@ -68,11 +68,22 @@ class LocationCreate(BaseModel):
     speed: Optional[float] = None
 
 
+class GeofenceEventRead(BaseModel):
+    """A real geofence transition detected for the submitted location."""
+
+    geofence_id: str
+    geofence_name: str
+    event_type: str  # "ENTERED" | "EXITED"
+    distance_meters: float
+
+
 class LocationRead(LocationCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     user_id: str
+    geofence_events: list[GeofenceEventRead] = []
+
 
 
 class SOSCreate(BaseModel):
