@@ -1,0 +1,2 @@
+# Keep shell scripts LF-only so cloud platforms (Render bash) can execute them
+*.sh text eol=lf
