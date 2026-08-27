@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     OTP_EXPIRE_MINUTES: int = 10
     OTP_MAX_ATTEMPTS: int = 5
     OTP_RESEND_SECONDS: int = 60
+    RATE_LIMIT_AUTH_MAX: int = 10
+    RATE_LIMIT_OTP_MAX: int = 6
+    RATE_LIMIT_SOS_MAX: int = 5
+    RATE_LIMIT_SHARED_MAX: int = 60
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    ENABLE_RATE_LIMITING: bool = False
+    MAX_REQUEST_BODY_BYTES: int = 1_000_000
     UPLOAD_DIR: Path = Path("uploads")
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
@@ -49,6 +56,21 @@ class Settings(BaseSettings):
             if self.DEV_OTP_MODE:
                 raise ValueError(
                     "DEV_OTP_MODE must be disabled when ENVIRONMENT=production"
+                )
+            # CORS: wildcard origins are incompatible with credentialed requests
+            # and a real risk in production. Require explicit origins.
+            origins = self.CORS_ORIGINS or []
+            if "*" in [o.strip() for o in origins]:
+                raise ValueError(
+                    "CORS_ORIGINS must not contain '*' when ENVIRONMENT=production"
+                )
+            if not origins:
+                raise ValueError(
+                    "CORS_ORIGINS must be explicitly configured when ENVIRONMENT=production"
+                )
+            if not self.ENABLE_RATE_LIMITING:
+                raise ValueError(
+                    "ENABLE_RATE_LIMITING must be True when ENVIRONMENT=production"
                 )
         return self
 

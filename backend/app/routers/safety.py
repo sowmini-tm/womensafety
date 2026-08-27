@@ -3,7 +3,7 @@ import os
 import httpx
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -167,8 +167,23 @@ def create_location(
 
 
 @router.get("/safety/location", response_model=list[LocationRead])
-def list_locations(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(Location).filter(Location.user_id == user.id).order_by(Location.timestamp.desc()).all()
+def list_locations(
+    limit: int = Query(200, ge=1, le=1000),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Owner-only recent location history with a safe upper bound.
+
+    Returns the most recent ``limit`` records (newest first) so an unbounded
+    history can never be dumped in one request. Default 200, max 1000.
+    """
+    return (
+        db.query(Location)
+        .filter(Location.user_id == user.id)
+        .order_by(Location.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @router.get("/safety/location/latest", response_model=LocationRead)

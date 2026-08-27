@@ -22,7 +22,8 @@ def check_database_connection() -> tuple[bool, str | None]:
         with SessionLocal() as session:
             session.execute(text("SELECT 1"))
         return True, None
-    except SQLAlchemyError as exc:
-        return False, str(exc)
-    except Exception as exc:
-        return False, str(exc)
+    except SQLAlchemyError:
+        # Never leak connection strings/credentials in health responses.
+        return False, "Database connection failed"
+    except Exception:
+        return False, "Database connection failed"

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ProfileCreate(BaseModel):
@@ -67,6 +67,34 @@ class LocationCreate(BaseModel):
     accuracy: Optional[float] = None
     speed: Optional[float] = None
 
+    @field_validator("latitude")
+    @classmethod
+    def _lat(cls, v: float) -> float:
+        if v < -90.0 or v > 90.0:
+            raise ValueError("latitude must be between -90 and 90")
+        return v
+
+    @field_validator("longitude")
+    @classmethod
+    def _lon(cls, v: float) -> float:
+        if v < -180.0 or v > 180.0:
+            raise ValueError("longitude must be between -180 and 180")
+        return v
+
+    @field_validator("accuracy")
+    @classmethod
+    def _accuracy(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and (v < 0 or v > 100000):
+            raise ValueError("accuracy must be between 0 and 100000 meters")
+        return v
+
+    @field_validator("speed")
+    @classmethod
+    def _speed(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and (v < 0 or v > 400):
+            raise ValueError("speed must be between 0 and 400 m/s")
+        return v
+
 
 class GeofenceEventRead(BaseModel):
     """A real geofence transition detected for the submitted location."""
@@ -90,6 +118,27 @@ class SOSCreate(BaseModel):
     latitude: float
     longitude: float
     description: Optional[str] = None
+
+    @field_validator("latitude")
+    @classmethod
+    def _lat(cls, v: float) -> float:
+        if v < -90.0 or v > 90.0:
+            raise ValueError("latitude must be between -90 and 90")
+        return v
+
+    @field_validator("longitude")
+    @classmethod
+    def _lon(cls, v: float) -> float:
+        if v < -180.0 or v > 180.0:
+            raise ValueError("longitude must be between -180 and 180")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def _desc(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 500:
+            raise ValueError("description must be 500 characters or fewer")
+        return v
 
 
 class NotificationDeliveryResult(BaseModel):
@@ -140,6 +189,34 @@ class GeofenceCreate(BaseModel):
     radius: float
     is_active: bool = True
 
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        if len(v) > 100:
+            raise ValueError("name must be 100 characters or fewer")
+        return v
+
+    @field_validator("latitude")
+    @classmethod
+    def _lat(cls, v: float) -> float:
+        if v < -90.0 or v > 90.0:
+            raise ValueError("latitude must be between -90 and 90")
+        return v
+
+    @field_validator("longitude")
+    @classmethod
+    def _lon(cls, v: float) -> float:
+        if v < -180.0 or v > 180.0:
+            raise ValueError("longitude must be between -180 and 180")
+        return v
+
+    @field_validator("radius")
+    @classmethod
+    def _radius(cls, v: float) -> float:
+        if v <= 0 or v > 500000:
+            raise ValueError("radius must be between 0 and 500000 meters")
+        return v
+
 
 class GeofenceRead(GeofenceCreate):
     model_config = ConfigDict(from_attributes=True)
@@ -154,6 +231,34 @@ class GeofenceUpdate(BaseModel):
     longitude: Optional[float] = None
     radius: Optional[float] = None
     is_active: Optional[bool] = None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 100:
+            raise ValueError("name must be 100 characters or fewer")
+        return v
+
+    @field_validator("latitude")
+    @classmethod
+    def _lat(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and (v < -90.0 or v > 90.0):
+            raise ValueError("latitude must be between -90 and 90")
+        return v
+
+    @field_validator("longitude")
+    @classmethod
+    def _lon(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and (v < -180.0 or v > 180.0):
+            raise ValueError("longitude must be between -180 and 180")
+        return v
+
+    @field_validator("radius")
+    @classmethod
+    def _radius(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and (v <= 0 or v > 500000):
+            raise ValueError("radius must be between 0 and 500000 meters")
+        return v
 
 
 class RoutePlanCreate(BaseModel):

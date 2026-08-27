@@ -158,7 +158,12 @@ class TestProductionSecretGuard:
     def test_production_accepts_strong_secret(self, monkeypatch):
         strong = "a" * 48
         built = self._build_settings(
-            monkeypatch, ENVIRONMENT="production", JWT_SECRET_KEY=strong, DEV_OTP_MODE=False
+            monkeypatch,
+            ENVIRONMENT="production",
+            JWT_SECRET_KEY=strong,
+            DEV_OTP_MODE=False,
+            ENABLE_RATE_LIMITING=True,
+            CORS_ORIGINS=["https://app.example.com"],
         )
         assert built.JWT_SECRET_KEY == strong
         assert built.ENVIRONMENT == "production"
@@ -167,6 +172,39 @@ class TestProductionSecretGuard:
         with pytest.raises(ValidationError, match="DEV_OTP_MODE"):
             self._build_settings(
                 monkeypatch, ENVIRONMENT="production", JWT_SECRET_KEY="a" * 48, DEV_OTP_MODE=True
+            )
+
+    def test_production_rejects_wildcard_cors(self, monkeypatch):
+        with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+            self._build_settings(
+                monkeypatch,
+                ENVIRONMENT="production",
+                JWT_SECRET_KEY="a" * 48,
+                DEV_OTP_MODE=False,
+                ENABLE_RATE_LIMITING=True,
+                CORS_ORIGINS=["*"],
+            )
+
+    def test_production_rejects_empty_cors(self, monkeypatch):
+        with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+            self._build_settings(
+                monkeypatch,
+                ENVIRONMENT="production",
+                JWT_SECRET_KEY="a" * 48,
+                DEV_OTP_MODE=False,
+                ENABLE_RATE_LIMITING=True,
+                CORS_ORIGINS=[],
+            )
+
+    def test_production_rejects_disabled_rate_limiting(self, monkeypatch):
+        with pytest.raises(ValidationError, match="ENABLE_RATE_LIMITING"):
+            self._build_settings(
+                monkeypatch,
+                ENVIRONMENT="production",
+                JWT_SECRET_KEY="a" * 48,
+                DEV_OTP_MODE=False,
+                ENABLE_RATE_LIMITING=False,
+                CORS_ORIGINS=["https://app.example.com"],
             )
 
     def test_development_still_allows_default_secret(self, monkeypatch):
