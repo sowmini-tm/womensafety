@@ -18,6 +18,24 @@ class Settings(BaseSettings):
 
     DATABASE_URL: AnyUrl
     ENVIRONMENT: str = "development"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _force_pymysql_driver(cls, value: Any) -> Any:
+        """Normalize bare mysql:// URLs to the PyMySQL driver.
+
+        SQLAlchemy maps the ``mysql://`` scheme to the MySQLdb (mysqlclient)
+        driver, which is not installed — this project's MySQL driver is
+        PyMySQL. Deployment platforms (e.g. Render with TiDB) may inject a
+        plain ``mysql://`` DATABASE_URL, which would otherwise crash at
+        startup with ``ModuleNotFoundError: No module named 'MySQLdb'``.
+        Only the scheme is rewritten; ``mysql+pymysql://`` and all other
+        schemes (sqlite://, postgresql://, ...) pass through untouched.
+        """
+        if isinstance(value, str) and value.startswith("mysql://"):
+            return "mysql+pymysql://" + value[len("mysql://"):]
+        return value
+
     JWT_SECRET_KEY: str = "change_this"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
