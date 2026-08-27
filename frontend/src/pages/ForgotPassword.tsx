@@ -1,7 +1,10 @@
 import React, { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { forgotPassword } from '../api/auth'
+import { getErrorMessage } from '../utils/errors'
+import { InlineAlert, inputClass } from '../components/ui'
+import { Shield } from 'lucide-react'
 
 export default function ForgotPassword() {
   const { register: r, handleSubmit } = useForm()
@@ -9,55 +12,77 @@ export default function ForgotPassword() {
   const [info, setInfo] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const onSubmit = async (data: any) => {
     setError(null)
     setInfo(null)
+    setLoading(true)
     try {
       const res = await forgotPassword({ email: data.email })
       setEmail(data.email)
       setInfo(res?.message || 'If the account exists, a reset code has been sent.')
     } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Something went wrong')
+      setError(getErrorMessage(e, 'Something went wrong'))
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100 flex items-center justify-center">
-      <div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-900/90 p-8 shadow-2xl shadow-slate-950/30">
-        <p className="text-xs uppercase tracking-[0.28em] text-amber-300">Password recovery</p>
-        <h2 className="mt-3 text-3xl font-semibold">Forgot password</h2>
-        <p className="mt-2 text-sm text-slate-300">We'll send a reset code to your email.</p>
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-600 text-white">
+            <Shield className="h-7 w-7" />
+          </span>
+          <h1 className="mt-4 text-3xl font-semibold">Forgot password</h1>
+          <p className="mt-2 text-sm text-slate-400">We'll send a reset code to your email.</p>
+        </div>
 
-        {error && <p className="mt-4 rounded-xl bg-rose-950/50 px-3 py-2 text-sm text-rose-200">{error}</p>}
-        {info && <p className="mt-4 rounded-xl bg-emerald-950/50 px-3 py-2 text-sm text-emerald-200">{info}</p>}
+        <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl sm:p-8">
+          {error && (
+            <div className="mb-4">
+              <InlineAlert>{error}</InlineAlert>
+            </div>
+          )}
+          {info && (
+            <div className="mb-4">
+              <InlineAlert tone="success">{info}</InlineAlert>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
-          <div>
-            <label className="mb-1 block text-sm text-slate-300">Email</label>
-            <input
-              {...r('email', { required: true })}
-              className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 outline-none focus:border-amber-500"
-              placeholder="you@example.com"
-            />
-          </div>
-          <button type="submit" className="w-full rounded-xl bg-amber-600 px-4 py-3 font-medium text-white hover:bg-amber-500">
-            Send reset code
-          </button>
-        </form>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-300">Email</label>
+              <input
+                {...r('email', { required: true })}
+                className={inputClass}
+                placeholder="you@example.com"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-full bg-amber-600 px-4 py-3 font-medium text-white hover:bg-amber-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-60"
+            >
+              {loading ? 'Sending…' : 'Send reset code'}
+            </button>
+          </form>
 
-        {email && info && !error && (
-          <button
-            onClick={() => navigate(`/reset-password?email=${encodeURIComponent(email)}`)}
-            className="mt-4 w-full rounded-xl border border-amber-500 px-4 py-3 text-sm font-medium text-amber-200 hover:border-amber-400"
-          >
-            I have a code — reset my password
-          </button>
-        )}
+          {email && info && !error && (
+            <button
+              onClick={() => navigate(`/reset-password?email=${encodeURIComponent(email)}`)}
+              className="mt-4 w-full rounded-full border border-amber-500 px-4 py-3 text-sm font-medium text-amber-200 hover:border-amber-400"
+            >
+              I have a code — reset my password
+            </button>
+          )}
 
-        <p className="mt-5 text-center text-sm">
-          <a href="/login" className="text-slate-300 hover:text-slate-200">Back to login</a>
-        </p>
+          <p className="mt-5 text-center text-sm">
+            <Link to="/login" className="text-slate-400 hover:text-slate-300">Back to login</Link>
+          </p>
+        </div>
       </div>
     </div>
   )

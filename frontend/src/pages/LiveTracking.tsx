@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   createLocation,
   fetchEmergencyContacts,
@@ -8,6 +7,10 @@ import {
   stopLocationSharing,
 } from '../api/safety'
 import RouteMap from '../components/RouteMap'
+import AppShell, { useToast } from '../components/AppShell'
+import { getErrorMessage } from '../utils/errors'
+import { Card, EmptyState, InlineAlert, Spinner, StatusBadge, Button, SectionTitle, inputClass } from '../components/ui'
+import { MapPin, Navigation, Share2, Square, Play } from 'lucide-react'
 
 // Upload roughly every 7 seconds while still receiving watchPosition updates.
 const UPLOAD_INTERVAL_MS = 7000
@@ -42,7 +45,7 @@ const describeGeolocationError = (error: GeolocationPositionError): string => {
 }
 
 export default function LiveTracking() {
-  const navigate = useNavigate()
+  const { notify } = useToast()
   const [contacts, setContacts] = useState<any[]>([])
   const [sharing, setSharing] = useState(false)
   const [position, setPosition] = useState<TrackedPosition | null>(null)
@@ -115,13 +118,16 @@ export default function LiveTracking() {
     watchIdRef.current = null
     setSharing(false)
     setShowToken(false)
-    try {
+        try {
       // Deactivate the server-side session so the contact link stops working.
       await stopLocationSharing()
       setShareSession((prev) => (prev ? { ...prev, is_active: false, stopped_at: new Date().toISOString() } : prev))
       setSessionError(null)
-    } catch {
-      setSessionError('Position tracking stopped locally, but the sharing session could not be stopped on the server.')
+      notify('Live location sharing stopped.', 'success')
+    } catch (e: any) {
+      const msg = getErrorMessage(e, 'Position tracking stopped locally, but the sharing session could not be stopped on the server.')
+      setSessionError(msg)
+      notify(msg, 'error')
     }
   }
 
@@ -198,28 +204,31 @@ export default function LiveTracking() {
           timeout: 20000,
         })
       })
-      .catch(() => {
-        setSessionError('Could not start the secure sharing session. Please try again.')
+            .catch((e: any) => {
+        const msg = getErrorMessage(e, 'Could not start the secure sharing session. Please try again.')
+        setSessionError(msg)
+        notify(msg, 'error')
       })
   }
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-slate-800 bg-slate-900/80 p-5 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">Live tracking</p>
-            <h1 className="mt-2 text-3xl font-semibold">Location sharing</h1>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => navigate('/dashboard')} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-slate-500">Dashboard</button>
-            {sharing ? (
-              <button onClick={stopSharing} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500">Stop sharing</button>
-            ) : (
-              <button onClick={startSharing} className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">Start sharing</button>
-            )}
-          </div>
-        </header>
+    return (
+    <AppShell title="Live Tracking & Sharing">
+            <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm text-slate-400">{sharing ? 'Tracking is on' : 'Tracking is off'}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {sharing ? (
+            <Button variant="danger" className="h-9" onClick={stopSharing}>
+              <Square className="h-4 w-4" /> Stop sharing
+            </Button>
+          ) : (
+            <Button variant="success" className="h-9" onClick={startSharing}>
+              <Play className="h-4 w-4" /> Start sharing
+            </Button>
+          )}
+        </div>
+      </div>
 
         {geoError && (
           <div className="mb-4 rounded-2xl border border-rose-700/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200" role="alert">
@@ -362,8 +371,7 @@ export default function LiveTracking() {
               </div>
             </div>
           </div>
-        </section>
-      </div>
-    </div>
-  )
+              </section>
+        </AppShell>
+    )
 }
