@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createLocation, fetchEmergencyContacts } from '../api/safety'
+import {
+  createLocation,
+  fetchEmergencyContacts,
+  fetchSharingStatus,
+  startLocationSharing,
+  stopLocationSharing,
+} from '../api/safety'
 import RouteMap from '../components/RouteMap'
 
 // Upload roughly every 7 seconds while still receiving watchPosition updates.
@@ -12,6 +18,14 @@ type TrackedPosition = {
   accuracy: number | null
   speed: number | null
   at: number
+}
+
+type ShareSession = {
+  id: string
+  is_active: boolean
+  share_token?: string | null
+  started_at?: string | null
+  stopped_at?: string | null
 }
 
 const describeGeolocationError = (error: GeolocationPositionError): string => {
@@ -36,6 +50,10 @@ export default function LiveTracking() {
   const [geoError, setGeoError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [geoEvents, setGeoEvents] = useState<Array<{ geofence_id: string; geofence_name: string; event_type: string; distance_meters: number }>>([])
+  const [shareSession, setShareSession] = useState<ShareSession | null>(null)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [showToken, setShowToken] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const watchIdRef = useRef<number | null>(null)
   const lastUploadRef = useRef(0)
@@ -52,6 +70,33 @@ export default function LiveTracking() {
     void load()
   }, [])
 
+  // Restore server-side sharing state so the UI reflects reality after reloads.
+  useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        setShareSession(await fetchSharingStatus())
+      } catch {
+        // No sessions yet (or backend unreachable) — treat as not sharing.
+      }
+    }
+    void loadStatus()
+  }, [])
+
+  const shareLink = shareSession?.share_token
+    ? `${window.location.origin}/shared-location/${shareSession.share_token}`
+    : null
+
+  const copyShareLink = async () => {
+    if (!shareLink) return
+    try {
+      await navigator.clipboard.writeText(shareLink)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2500)
+    } catch {
+      setCopied(false)
+    }
+  }
+
   // Clear any active watcher when navigating away.
   useEffect(
     () => () => {
@@ -63,12 +108,21 @@ export default function LiveTracking() {
     [],
   )
 
-  const stopSharing = () => {
+  const stopSharing = async () => {
     if (watchIdRef.current !== null && 'geolocation' in navigator) {
       navigator.geolocation.clearWatch(watchIdRef.current)
     }
     watchIdRef.current = null
     setSharing(false)
+    setShowToken(false)
+    try {
+      // Deactivate the server-side session so the contact link stops working.
+      await stopLocationSharing()
+      setShareSession((prev) => (prev ? { ...prev, is_active: false, stopped_at: new Date().toISOString() } : prev))
+      setSessionError(null)
+    } catch {
+      setSessionError('Position tracking stopped locally, but the sharing session could not be stopped on the server.')
+    }
   }
 
   const handlePosition = (pos: GeolocationPosition) => {
@@ -120,20 +174,33 @@ export default function LiveTracking() {
     if (watchIdRef.current !== null) return // already watching — never spawn duplicate watchers
 
     setGeoError(null)
-    setSharing(true)
-    lastUploadRef.current = 0
+    setSessionError(null)
 
-    // One immediate fix plus the continuous watcher; both funnel through handlePosition,
-    // and the throttle keeps the double callback from creating a duplicate record.
-    navigator.geolocation.getCurrentPosition(handlePosition, handleGeoError, {
-      enableHighAccuracy: true,
-      timeout: 15000,
-    })
-    watchIdRef.current = navigator.geolocation.watchPosition(handlePosition, handleGeoError, {
-      enableHighAccuracy: true,
-      maximumAge: 5000,
-      timeout: 20000,
-    })
+    // Create the secure server-side sharing session first; GPS watching starts
+    // only once the backend confirms the session is active.
+    startLocationSharing()
+      .then((session) => {
+        setShareSession(session)
+        setSharing(true)
+        setShowToken(true)
+        lastUploadRef.current = 0
+
+        // One immediate fix plus the continuous watcher; both funnel through
+        // handlePosition, and the throttle keeps the double callback from
+        // creating a duplicate record.
+        navigator.geolocation.getCurrentPosition(handlePosition, handleGeoError, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+        })
+        watchIdRef.current = navigator.geolocation.watchPosition(handlePosition, handleGeoError, {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 20000,
+        })
+      })
+      .catch(() => {
+        setSessionError('Could not start the secure sharing session. Please try again.')
+      })
   }
 
   return (
@@ -157,6 +224,12 @@ export default function LiveTracking() {
         {geoError && (
           <div className="mb-4 rounded-2xl border border-rose-700/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200" role="alert">
             {geoError}
+          </div>
+        )}
+
+        {sessionError && (
+          <div className="mb-4 rounded-2xl border border-amber-700/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-200" role="alert">
+            {sessionError}
           </div>
         )}
 
@@ -219,7 +292,14 @@ export default function LiveTracking() {
               <div className="mt-4 grid gap-3">
                 <div className="rounded-2xl bg-slate-800 p-3">
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Status</p>
-                  <p className={`mt-2 text-xl font-semibold ${sharing ? 'text-emerald-300' : 'text-slate-300'}`}>{sharing ? 'Live' : 'Paused'}</p>
+                  <p className={`mt-2 text-xl font-semibold ${sharing || shareSession?.is_active ? 'text-emerald-300' : 'text-slate-300'}`}>
+                    {sharing || shareSession?.is_active ? 'Live' : 'Paused'}
+                  </p>
+                  {shareSession && (
+                    <p className="mt-1 text-xs text-slate-400">
+                      {shareSession.is_active ? 'Contacts can view your location' : 'Sharing session stopped'}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-2xl bg-slate-800 p-3">
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Updated</p>
@@ -235,6 +315,32 @@ export default function LiveTracking() {
                   {uploadError && <p className="mt-2 text-xs text-amber-300">{uploadError}</p>}
                 </div>
               </div>
+
+              {shareSession?.is_active && shareLink && (
+                <div className="mt-4 rounded-2xl border border-emerald-800/60 bg-emerald-950/30 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Emergency contact link</p>
+                  <p className="mt-2 break-all text-xs text-slate-300">
+                    Anyone with this secure link can see your live position while sharing is active. Stop sharing to revoke it instantly.
+                  </p>
+                  {showToken ? (
+                    <div className="mt-2 space-y-2">
+                      <code className="block max-h-20 overflow-y-auto break-all rounded-xl bg-slate-950/70 p-2 text-[11px] text-emerald-200">{shareLink}</code>
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={copyShareLink} className="rounded-full bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-500">
+                          {copied ? 'Copied!' : 'Copy link'}
+                        </button>
+                        <button onClick={() => setShowToken(false)} className="rounded-full border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-400">
+                          Hide
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowToken(true)} className="mt-2 rounded-full border border-emerald-600 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:border-emerald-400">
+                      Show secure contact link
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5">

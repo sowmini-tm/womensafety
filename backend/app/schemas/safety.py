@@ -255,3 +255,36 @@ class ChatbotRequest(BaseModel):
 class ChatbotResponse(BaseModel):
     response: str
     suggestions: list[str] = []
+
+
+class ShareSessionStart(BaseModel):
+    """Body for starting a location-sharing session (kept empty on purpose)."""
+
+
+class ShareSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    is_active: bool
+    share_token: Optional[str] = None  # raw token, returned ONLY at start
+    started_at: Optional[str] = None
+    stopped_at: Optional[str] = None
+
+
+class ShareSessionStatus(BaseModel):
+    id: str
+    is_active: bool
+    started_at: Optional[str] = None
+    stopped_at: Optional[str] = None
+
+
+class SharedLocationRead(BaseModel):
+    """Minimum fields exposed to an emergency contact holding the share token."""
+
+    latitude: float
+    longitude: float
+    accuracy: Optional[float] = None
+    speed: Optional[float] = None
+    timestamp: Optional[str] = None
+    session_status: str

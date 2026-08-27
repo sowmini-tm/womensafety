@@ -10,6 +10,11 @@ from ..database import get_db
 from ..models.emergency_contact import EmergencyContact
 from ..models.geofence import Geofence
 from ..models.location import Location
+from ..models.location_share_session import (
+    LocationShareSession,
+    generate_share_token,
+    hash_share_token,
+)
 from ..models.notification import (
     Notification,
     NotificationChannel,
@@ -44,6 +49,10 @@ from ..schemas.safety import (
     RouteResultRead,
     SOSCreate,
     SOSRead,
+    SharedLocationRead,
+    ShareSessionRead,
+    ShareSessionStart,
+    ShareSessionStatus,
     ThreatAssessmentCreate,
     ThreatAssessmentRead,
 )
@@ -174,6 +183,144 @@ def get_latest_location(user: User = Depends(get_current_user), db: Session = De
     if not location:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No locations recorded yet")
     return location
+
+
+# ---------------------------------------------------------------------------
+# Phase 10: secure emergency-contact live-location sharing
+# ---------------------------------------------------------------------------
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _deactivate_active_sessions(db: Session, user_id: str) -> None:
+    db.query(LocationShareSession).filter(
+        LocationShareSession.user_id == user_id,
+        LocationShareSession.is_active.is_(True),
+    ).update(
+        {
+            "is_active": False,
+            "stopped_at": datetime.utcnow(),
+        },
+        synchronize_session=False,
+    )
+
+
+@router.post("/safety/location-sharing/start", response_model=ShareSessionRead)
+def start_location_sharing(payload: ShareSessionStart, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Explicitly start a sharing session; any previous active one is deactivated.
+
+    The raw share token is returned exactly once here. Only its SHA-256 hash is
+    persisted — a database leak never reveals a usable contact link.
+    """
+    raw_token = generate_share_token()
+    _deactivate_active_sessions(db, user.id)
+
+    session_row = LocationShareSession(
+        user_id=user.id,
+        share_token_hash=hash_share_token(raw_token),
+        is_active=True,
+        started_at=datetime.utcnow(),
+    )
+    db.add(session_row)
+    db.commit()
+    db.refresh(session_row)
+
+    # Never log the raw token.
+    return ShareSessionRead(
+        id=session_row.id,
+        user_id=session_row.user_id,
+        is_active=session_row.is_active,
+        share_token=raw_token,
+        started_at=_iso(session_row.started_at),
+        stopped_at=_iso(session_row.stopped_at),
+    )
+
+
+@router.post("/safety/location-sharing/stop", response_model=ShareSessionStatus)
+def stop_location_sharing(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Stop the caller's active sharing session; 404 if none is active."""
+    active = (
+        db.query(LocationShareSession)
+        .filter(LocationShareSession.user_id == user.id, LocationShareSession.is_active.is_(True))
+        .first()
+    )
+    if not active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active location-sharing session")
+
+    active.is_active = False
+    active.stopped_at = datetime.utcnow()
+    db.commit()
+    db.refresh(active)
+    return ShareSessionStatus(
+        id=active.id,
+        is_active=active.is_active,
+        started_at=_iso(active.started_at),
+        stopped_at=_iso(active.stopped_at),
+    )
+
+
+@router.get("/safety/location-sharing/status", response_model=ShareSessionStatus)
+def get_location_sharing_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Sharing status for the requesting owner only."""
+    session_row = (
+        db.query(LocationShareSession)
+        .filter(LocationShareSession.user_id == user.id, LocationShareSession.is_active.is_(True))
+        .first()
+    ) or (
+        db.query(LocationShareSession)
+        .filter(LocationShareSession.user_id == user.id)
+        .order_by(LocationShareSession.created_at.desc())
+        .first()
+    )
+    if not session_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No location-sharing sessions yet")
+    return ShareSessionStatus(
+        id=session_row.id,
+        is_active=session_row.is_active,
+        started_at=_iso(session_row.started_at),
+        stopped_at=_iso(session_row.stopped_at),
+    )
+
+
+@router.get("/safety/shared-location/{share_token}", response_model=SharedLocationRead)
+def get_shared_location(share_token: str, db: Session = Depends(get_db)):
+    """Contact-facing endpoint: latest owner location for an ACTIVE session.
+
+    No app account or JWT is required — possession of the unguessable bearer
+    token IS the authorization, and it works only while the session is active.
+    Returns minimum fields only (never history/profile/medical/contact data).
+    """
+    if not share_token or len(share_token) < 16 or len(share_token) > 128:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared location not available")
+
+    token_hash = hash_share_token(share_token)
+    session_row = (
+        db.query(LocationShareSession).filter(LocationShareSession.share_token_hash == token_hash).first()
+    )
+    if session_row is None or not session_row.is_active:
+        # A single generic 404 for unknown AND stopped tokens — never confirms
+        # whether a token ever existed.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared location not available")
+
+    location = (
+        db.query(Location)
+        .filter(Location.user_id == session_row.user_id)
+        .order_by(Location.timestamp.desc(), Location.created_at.desc())
+        .first()
+    )
+    if location is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No location shared yet")
+
+    return SharedLocationRead(
+        latitude=location.latitude,
+        longitude=location.longitude,
+        accuracy=location.accuracy,
+        speed=location.speed,
+        timestamp=_iso(location.timestamp),
+        session_status="active",
+    )
 
 
 def _attempt_delivery(channel: NotificationChannel, recipient: str, message: str) -> dict:

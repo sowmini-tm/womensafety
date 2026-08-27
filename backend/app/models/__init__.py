@@ -20,6 +20,7 @@ from .route_result import RouteResult
 from .notification import Notification
 from .audit_log import AuditLog
 from .geofence_state import GeofenceState
+from .location_share_session import LocationShareSession
 
 __all__ = [
     "Base",
@@ -42,4 +43,5 @@ __all__ = [
     "Notification",
     "AuditLog",
     "GeofenceState",
+    "LocationShareSession",
 ]

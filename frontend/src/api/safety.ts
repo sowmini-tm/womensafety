@@ -49,6 +49,23 @@ export const fetchLocations = async () => {
   return response.data
 }
 
+// --- Phase 10: secure emergency-contact live-location sharing ---
+
+export const startLocationSharing = async () => {
+  const response = await api.post('/safety/location-sharing/start', {})
+  return response.data
+}
+
+export const stopLocationSharing = async () => {
+  const response = await api.post('/safety/location-sharing/stop')
+  return response.data
+}
+
+export const fetchSharingStatus = async () => {
+  const response = await api.get('/safety/location-sharing/status')
+  return response.data
+}
+
 export const triggerSOS = async (payload: { latitude: number; longitude: number; description?: string }) => {
   const response = await api.post('/safety/sos', payload)
   return response.data
