@@ -157,9 +157,17 @@ class TestProductionSecretGuard:
 
     def test_production_accepts_strong_secret(self, monkeypatch):
         strong = "a" * 48
-        built = self._build_settings(monkeypatch, ENVIRONMENT="production", JWT_SECRET_KEY=strong)
+        built = self._build_settings(
+            monkeypatch, ENVIRONMENT="production", JWT_SECRET_KEY=strong, DEV_OTP_MODE=False
+        )
         assert built.JWT_SECRET_KEY == strong
         assert built.ENVIRONMENT == "production"
+
+    def test_production_rejects_dev_otp_mode(self, monkeypatch):
+        with pytest.raises(ValidationError, match="DEV_OTP_MODE"):
+            self._build_settings(
+                monkeypatch, ENVIRONMENT="production", JWT_SECRET_KEY="a" * 48, DEV_OTP_MODE=True
+            )
 
     def test_development_still_allows_default_secret(self, monkeypatch):
         built = self._build_settings(monkeypatch)

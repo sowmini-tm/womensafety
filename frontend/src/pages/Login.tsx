@@ -41,6 +41,11 @@ export default function Login() {
           Need an account?{' '}
           <a href="/register" className="text-indigo-300 hover:text-indigo-200">Register here</a>
         </p>
+        <p className="mt-2 text-center text-sm">
+          <a href="/forgot-password" className="text-slate-400 hover:text-slate-300">Forgot password?</a>
+          {' · '}
+          <a href="/verify-email" className="text-slate-400 hover:text-slate-300">Verify email</a>
+        </p>
       </div>
     </div>
   )

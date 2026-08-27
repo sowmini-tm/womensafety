@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     DEV_OTP_MODE: bool = True
+    OTP_LENGTH: int = 6
+    OTP_EXPIRE_MINUTES: int = 10
+    OTP_MAX_ATTEMPTS: int = 5
+    OTP_RESEND_SECONDS: int = 60
     UPLOAD_DIR: Path = Path("uploads")
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
@@ -40,6 +44,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "JWT_SECRET_KEY must be overridden with a strong value "
                     "(at least 32 characters) when ENVIRONMENT=production"
+                )
+            # Production must NEVER expose deterministic/dev OTPs.
+            if self.DEV_OTP_MODE:
+                raise ValueError(
+                    "DEV_OTP_MODE must be disabled when ENVIRONMENT=production"
                 )
         return self
 
