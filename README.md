@@ -53,11 +53,11 @@ alembic upgrade head
 ```powershell
 cd frontend
 npm install
-copy .env.example .env
+copy .env.example .env.development
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL` in `frontend/.env` (template default points at `http://localhost:8000/api`). It is baked into the bundle at build time, so change it per environment before running `npm run build`.
+Set `VITE_API_BASE_URL` in `frontend/.env.development` for local development (template default points at `http://localhost:8000/api`). It is baked into the bundle at build time: production builds read it from the deployment platform's environment (e.g. the Render dashboard), never from a local file — this prevents `localhost`/`127.0.0.1` URLs from leaking into production bundles.
 
 Open the frontend at `http://localhost:5173` and the backend at `http://localhost:8000`.
 
@@ -105,7 +105,7 @@ Set `VITE_API_BASE_URL` to the deployed backend API base (e.g. `https://<your-ba
 
 Configure in your platform dashboard; never commit them.
 
-Backend: `DATABASE_URL`, `ENVIRONMENT=production`, `JWT_SECRET_KEY` (random, ≥ 32 chars — startup refuses weaker values), `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`, `DEV_OTP_MODE=false`, `CORS_ORIGINS`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `OSRM_BASE_URL`, optional `WEB_CONCURRENCY`. See `backend/.env.example` for descriptions and safe placeholders.
+Backend: `DATABASE_URL`, `ENVIRONMENT=production`, `JWT_SECRET_KEY` (random, ≥ 32 chars — startup refuses weaker values), `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`, `DEV_OTP_MODE=false`, `ENABLE_RATE_LIMITING=true` (startup refuses to boot in production without it), `CORS_ORIGINS`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `OSRM_BASE_URL`, optional `WEB_CONCURRENCY`. See `backend/.env.example` for descriptions and safe placeholders.
 
 Frontend: `VITE_API_BASE_URL`.
 

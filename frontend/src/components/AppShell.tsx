@@ -64,7 +64,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
     try {
       const token = localStorage.getItem('access_token')
       if (!token) return
-      fetch(`${import.meta.env.VITE_API_BASE_URL}/profile`, {
+      fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/profile`, {
         headers: { Authorization: `Bearer ${token}` },
       })
         .then((res) => (res.ok ? res.json() : null))

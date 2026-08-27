@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   createLocation,
   fetchEmergencyContacts,
@@ -46,6 +47,7 @@ const describeGeolocationError = (error: GeolocationPositionError): string => {
 
 export default function LiveTracking() {
   const { notify } = useToast()
+  const navigate = useNavigate()
   const [contacts, setContacts] = useState<any[]>([])
   const [sharing, setSharing] = useState(false)
   const [position, setPosition] = useState<TrackedPosition | null>(null)
@@ -364,10 +366,18 @@ export default function LiveTracking() {
                         <p className="font-medium text-slate-100">{contact.name}</p>
                         <p className="text-sm text-slate-300">{contact.phone}</p>
                       </div>
-                      <button className="rounded-full bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-500">Notify</button>
+                      <span className="rounded-full bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300">
+                        {contact.is_primary ? '★ Primary' : 'On alert list'}
+                      </span>
                     </div>
                   ))
                 )}
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="w-full rounded-2xl bg-cyan-600 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-500"
+                >
+                  Alert contacts with SOS — open Dashboard
+                </button>
               </div>
             </div>
           </div>

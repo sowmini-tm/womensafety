@@ -5,7 +5,10 @@ from sqlalchemy.orm import sessionmaker
 from .config import settings
 from .models import Base
 
-engine = create_engine(str(settings.DATABASE_URL), future=True)
+# pool_pre_ping discards stale pooled connections (common with managed cloud
+# MySQL like TiDB after idle timeouts) instead of failing the first request
+# after an idle period. No other engine behavior is changed.
+engine = create_engine(str(settings.DATABASE_URL), future=True, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 

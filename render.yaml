@@ -27,6 +27,8 @@ services:
         sync: false # exact deployed frontend origin(s), comma-separated
       - key: DEV_OTP_MODE
         value: "false"
+      - key: ENABLE_RATE_LIMITING
+        value: "true" # REQUIRED: production startup guard in app/config.py refuses to boot without it
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN

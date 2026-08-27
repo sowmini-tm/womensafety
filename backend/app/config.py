@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
-from typing import List, Any
+from typing import Annotated, Any, List
 
 from dotenv import load_dotenv
 from pydantic import AnyUrl, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 load_dotenv()
 
@@ -35,7 +35,12 @@ class Settings(BaseSettings):
     ENABLE_RATE_LIMITING: bool = False
     MAX_REQUEST_BODY_BYTES: int = 1_000_000
     UPLOAD_DIR: Path = Path("uploads")
-    CORS_ORIGINS: List[str] = [
+    # NoDecode: without it, pydantic-settings JSON-decodes List[str] env values
+    # BEFORE the validator below runs, so a plain comma-separated CORS_ORIGINS
+    # (the format deployment dashboards use, e.g. Render) crashes the app at
+    # import time with SettingsError. With NoDecode the raw string reaches
+    # parse_cors_origins, which accepts BOTH CSV and JSON-array formats.
+    CORS_ORIGINS: Annotated[List[str], NoDecode] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",

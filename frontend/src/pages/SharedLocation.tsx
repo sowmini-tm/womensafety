@@ -24,7 +24,7 @@ type ViewerState =
 // in the URL is the only authorization this contact needs, so no JWT should
 // ever be attached to (or embedded in) these requests.
 const sharedApi = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '',
   headers: { 'Content-Type': 'application/json' },
 })
 

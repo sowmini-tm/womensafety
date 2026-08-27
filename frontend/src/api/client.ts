@@ -1,7 +1,9 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  // '' (same-origin) fallback keeps the app working if the build-time env var
+  // is ever omitted; production builds on Render get VITE_API_BASE_URL set.
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '',
   headers: {
     'Content-Type': 'application/json',
   },

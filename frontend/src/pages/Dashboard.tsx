@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createEmergencyContact, createLocation, deleteEmergencyContact, fetchEmergencyContacts, fetchLocations, scheduleFakeCall, triggerSOS, updateEmergencyContact } from '../api/safety'
 import { createGeofence, createRoutePlan, deleteGeofence, fetchGeofences, fetchNotifications, fetchSafetyActivity, updateGeofence } from '../api/safetyExtra'
+import { getErrorMessage } from '../utils/errors'
 import RouteMap from '../components/RouteMap'
 
 export default function Dashboard() {
@@ -55,8 +56,11 @@ export default function Dashboard() {
         { name: 'Police Emergency', number: '112', type: 'police' },
         { name: 'Women in Distress', number: '181', type: 'women_safety' },
       ])
-    } catch {
-      setStatus('Not authenticated or backend unavailable')
+      setStatus('Ready')
+    } catch (e) {
+      // Show the real reason (expired session, network down, server error)
+      // instead of a blanket "Not authenticated or backend unavailable".
+      setStatus(getErrorMessage(e, 'Could not load dashboard data. Check your connection and try again.'))
     }
   }
 
@@ -250,10 +254,9 @@ export default function Dashboard() {
           })
           setRouteResult(result)
           setStatus(`Real route planned · ${Math.round(result.results?.[0]?.distance ?? 0)} m`)
-        } catch (error: any) {
+        } catch (error: unknown) {
           setRouteResult(null)
-          const detail = error?.response?.data?.detail
-          setStatus(typeof detail === 'string' ? detail : 'Route plan failed')
+          setStatus(getErrorMessage(error, 'Route plan failed'))
         } finally {
           setPlanningRoute(false)
         }
