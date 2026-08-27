@@ -7,6 +7,7 @@ import Register from './pages/Register'
 import Profile from './pages/Profile'
 import Dashboard from './pages/Dashboard'
 import LiveTracking from './pages/LiveTracking'
+import SharedLocation from './pages/SharedLocation'
 import PrivateRoute from './components/PrivateRoute'
 import './index.css'
 
@@ -20,6 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
         <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/live-tracking" element={<PrivateRoute><LiveTracking /></PrivateRoute>} />
+        <Route path="/shared-location/:token" element={<SharedLocation />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,
